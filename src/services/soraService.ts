@@ -14,8 +14,8 @@ export interface BackendConfig {
 }
 
 const DEFAULT_CONFIG: BackendConfig = {
-  apiUrl: '/api/mas/sora',
-  useLiveApi: false, // Default to built-in high precision dataset until backend is wired up
+  apiUrl: '/api/sora',
+  useLiveApi: true,
   cacheTtlMinutes: 60,
 };
 
@@ -32,6 +32,18 @@ export class SoraService {
     this.config = this.loadConfig();
     this.ratesCache = this.loadCachedRates() || SEEDED_MAS_SORA_RATES;
     this.lastFetchedTime = new Date().toISOString();
+  }
+
+  public async checkHealth(): Promise<{ status: string; masKeyConfigured: boolean }> {
+    try {
+      const res = await fetch('/api/health');
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // offline / client-only fallback
+    }
+    return { status: 'unknown', masKeyConfigured: false };
   }
 
   public getConfig(): BackendConfig {
@@ -93,7 +105,8 @@ export class SoraService {
           'Accept': 'application/json',
         };
         if (this.config.apiKey) {
-          headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+          headers['KeyId'] = this.config.apiKey;
+          headers['x-mas-key-id'] = this.config.apiKey;
         }
 
         const response = await fetch(this.config.apiUrl, {
@@ -163,6 +176,11 @@ export class SoraService {
   private normalizeApiResponse(data: any): SoraDailyRate[] {
     // If array already
     if (Array.isArray(data)) return data;
+
+    // Serverless endpoint format: { records: [...] }
+    if (data?.records && Array.isArray(data.records)) {
+      return data.records;
+    }
 
     // Standard MAS CKAN Datastore JSON format: data.result.records
     if (data?.result?.records && Array.isArray(data.result.records)) {

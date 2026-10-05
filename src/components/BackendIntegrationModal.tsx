@@ -44,46 +44,29 @@ export const BackendIntegrationModal: React.FC<BackendIntegrationModalProps> = (
     }
   };
 
-  const sampleBackendSnippet = `// server.ts or api/sora.ts (Express / Node.js backend proxy)
-import express from 'express';
-import axios from 'axios';
+  const sampleBackendSnippet = `// /api/sora.ts (Serverless handler)
+// Pulls MAS Daily SORA + compounded 1M/3M/6M averages
+// Upstream: https://eservices.mas.gov.sg/apimg-gw/server/monthly_statistical_bulletin_non610mssql/domestic_interest_rates_daily/views/domestic_interest_rates_daily
+// Header required: KeyId: <MAS_KEY_ID>
 
-const router = express.Router();
-
-// Official MAS Domestic Interest Rates & SORA API Endpoint
-const MAS_API_ENDPOINT = 
-  'https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=9a0bf149-308d-4470-877b-8b24e6223932&limit=150&sort=end_of_day%20desc';
-
-router.get('/api/mas/sora', async (req, res) => {
-  try {
-    const response = await axios.get(MAS_API_ENDPOINT, {
-      headers: { 'Accept': 'application/json' },
-      timeout: 10000,
-    });
-
-    const records = response.data?.result?.records || [];
-
-    // Map records to standard SORA payload
-    const normalized = records.map((item: any) => ({
-      date: item.end_of_day,
-      overnightRate: parseFloat(item.sora),
-      compounded1M: item.compounded_1m ? parseFloat(item.compounded_1m) : null,
-      compounded3M: item.compounded_3m ? parseFloat(item.compounded_3m) : null,
-      compounded6M: item.compounded_6m ? parseFloat(item.compounded_6m) : null,
-      soraIndex: item.sora_index ? parseFloat(item.sora_index) : null,
-      aggregateVolume: item.aggregate_volume ? parseFloat(item.aggregate_volume) : null,
-      percentile10: item.calculation_percentile_10 ? parseFloat(item.calculation_percentile_10) : null,
-      percentile90: item.calculation_percentile_90 ? parseFloat(item.calculation_percentile_90) : null,
-    }));
-
-    res.json(normalized);
-  } catch (error) {
-    console.error('Error fetching MAS rates:', error);
-    res.status(500).json({ error: 'Failed to retrieve MAS rates' });
+export default async function handler(req, res) {
+  const keyId = process.env.MAS_KEY_ID || req.headers['keyid'];
+  if (!keyId) {
+    return res.status(401).json({ error: 'MAS_KEY_ID required' });
   }
-});
 
-export default router;`;
+  const upstreamUrl = 'https://eservices.mas.gov.sg/apimg-gw/server/monthly_statistical_bulletin_non610mssql/domestic_interest_rates_daily/views/domestic_interest_rates_daily';
+
+  const response = await fetch(upstreamUrl, {
+    headers: {
+      'KeyId': keyId,
+      'Accept': 'application/json',
+    },
+  });
+
+  const data = await response.json();
+  res.status(200).json(data);
+}`;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(sampleBackendSnippet);
@@ -146,11 +129,11 @@ export default router;`;
                 type="text"
                 value={apiUrl}
                 onChange={(e) => setApiUrl(e.target.value)}
-                placeholder="/api/mas/sora or https://..."
+                placeholder="/api/sora or https://..."
                 className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 bg-white"
               />
               <p className="text-[11px] text-slate-500">
-                Default: <code className="font-mono text-slate-700">/api/mas/sora</code>
+                Default: <code className="font-mono text-slate-700">/api/sora</code>
               </p>
             </div>
 
